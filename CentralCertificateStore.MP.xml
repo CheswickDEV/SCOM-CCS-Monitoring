@@ -1,0 +1,389 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ManagementPack SchemaVersion="2.0" ContentReadable="true" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Manifest>
+    <Identity>
+      <ID>CentralCertificateStore.MP</ID>
+      <Version>1.0.0.0</Version>
+    </Identity>
+    <Name>Central Certificate Store Monitoring</Name>
+    <References>
+      <Reference Alias="Windows">
+        <ID>Microsoft.Windows.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Health">
+        <ID>System.Health.Library</ID>
+        <Version>7.0.8437.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <!-- Central Certificate Store Class -->
+        <ClassType ID="CentralCertificateStore.MP.CentralCertificateStore" Accessibility="Public" Abstract="false" Base="Windows!Microsoft.Windows.LocalApplication" Hosted="true" Singleton="true">
+          <Property ID="StorePhysicalPath" Type="string" Key="false" CaseSensitive="false" MaxLength="256" MinLength="0" />
+          <Property ID="ExcludedIssuers" Type="string" Key="false" CaseSensitive="false" MaxLength="4000" MinLength="0" />
+        </ClassType>
+
+        <!-- Certificate Class -->
+        <ClassType ID="CentralCertificateStore.MP.Certificate" Accessibility="Public" Abstract="false" Base="System!System.LogicalEntity" Hosted="true">
+          <Property ID="Thumbprint" Type="string" Key="true" CaseSensitive="false" MaxLength="256" MinLength="0" />
+          <Property ID="Subject" Type="string" Key="false" CaseSensitive="false" MaxLength="512" MinLength="0" />
+          <Property ID="Issuer" Type="string" Key="false" CaseSensitive="false" MaxLength="512" MinLength="0" />
+          <Property ID="NotBefore" Type="string" Key="false" CaseSensitive="false" MaxLength="50" MinLength="0" />
+          <Property ID="NotAfter" Type="string" Key="false" CaseSensitive="false" MaxLength="50" MinLength="0" />
+          <Property ID="FriendlyName" Type="string" Key="false" CaseSensitive="false" MaxLength="256" MinLength="0" />
+        </ClassType>
+      </ClassTypes>
+
+      <RelationshipTypes>
+        <RelationshipType ID="CentralCertificateStore.MP.CentralCertificateStoreHostsCertificate" Accessibility="Public" Abstract="false" Base="System!System.Hosting">
+          <Source ID="Source" Type="CentralCertificateStore.MP.CentralCertificateStore" />
+          <Target ID="Target" Type="CentralCertificateStore.MP.Certificate" />
+        </RelationshipType>
+      </RelationshipTypes>
+    </EntityTypes>
+
+    <ModuleTypes>
+      <!-- Discovery Data Source Module -->
+      <DataSourceModuleType ID="CentralCertificateStore.MP.CentralCertificateStore.Discovery.DataSource" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element name="IntervalSeconds" type="xsd:integer" />
+          <xsd:element name="ExcludedIssuers" type="xsd:string" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="ExcludedIssuers" Selector="$Config/ExcludedIssuers$" ParameterType="string" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="Scheduler" TypeID="System!System.Discovery.Scheduler">
+                <Scheduler>
+                  <SimpleReccuringSchedule>
+                    <Interval Unit="Seconds">$Config/IntervalSeconds$</Interval>
+                  </SimpleReccuringSchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="Script" TypeID="Windows!Microsoft.Windows.PowerShellDiscoveryProbe">
+                <ScriptName>Discover-CentralCertificates.ps1</ScriptName>
+                <ScriptBody>
+                  $IncludeFileContent/Scripts/Discover-CentralCertificates.ps1$
+                </ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>sourceId</Name>
+                    <Value>$MPElement$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>managedEntityId</Name>
+                    <Value>$Target/Id$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>computerName</Name>
+                    <Value>$Target/Host/Property[Type="Windows!Microsoft.Windows.Computer"]/NetworkName$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>excludedIssuers</Name>
+                    <Value>$Config/ExcludedIssuers$</Value>
+                  </Parameter>
+                </Parameters>
+                <TimeoutSeconds>300</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="Script">
+                <Node ID="Scheduler" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.Discovery.Data</OutputType>
+      </DataSourceModuleType>
+
+      <!-- Certificate Expiration Monitor Data Source -->
+      <DataSourceModuleType ID="CentralCertificateStore.MP.Certificate.Expiration.DataSource" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element name="IntervalSeconds" type="xsd:integer" />
+          <xsd:element name="WarningThresholdHours" type="xsd:integer" />
+          <xsd:element name="Thumbprint" type="xsd:string" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="WarningThresholdHours" Selector="$Config/WarningThresholdHours$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="Scheduler" TypeID="System!System.Scheduler">
+                <Scheduler>
+                  <SimpleReccuringSchedule>
+                    <Interval Unit="Seconds">$Config/IntervalSeconds$</Interval>
+                  </SimpleReccuringSchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="Script" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagProbe">
+                <ScriptName>Monitor-CertificateExpiration.ps1</ScriptName>
+                <ScriptBody>
+                  $IncludeFileContent/Scripts/Monitor-CertificateExpiration.ps1$
+                </ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>thumbprint</Name>
+                    <Value>$Config/Thumbprint$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>warningThresholdHours</Name>
+                    <Value>$Config/WarningThresholdHours$</Value>
+                  </Parameter>
+                </Parameters>
+                <TimeoutSeconds>60</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="Script">
+                <Node ID="Scheduler" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>
+    </ModuleTypes>
+  </TypeDefinitions>
+
+  <Monitoring>
+    <Discoveries>
+      <!-- Discover Central Certificate Store -->
+      <Discovery ID="CentralCertificateStore.MP.CentralCertificateStore.Discovery" Enabled="true" Target="Windows!Microsoft.Windows.Server.OperatingSystem" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="CentralCertificateStore.MP.CentralCertificateStore" />
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="Windows!Microsoft.Windows.TimedPowerShell.DiscoveryProvider">
+          <IntervalSeconds>14400</IntervalSeconds>
+          <SyncTime />
+          <ScriptName>Discover-CentralCertificateStore.ps1</ScriptName>
+          <ScriptBody>
+            $IncludeFileContent/Scripts/Discover-CentralCertificateStore.ps1$
+          </ScriptBody>
+          <Parameters>
+            <Parameter>
+              <Name>sourceId</Name>
+              <Value>$MPElement$</Value>
+            </Parameter>
+            <Parameter>
+              <Name>managedEntityId</Name>
+              <Value>$Target/Id$</Value>
+            </Parameter>
+            <Parameter>
+              <Name>computerName</Name>
+              <Value>$Target/Host/Property[Type="Windows!Microsoft.Windows.Computer"]/NetworkName$</Value>
+            </Parameter>
+          </Parameters>
+          <TimeoutSeconds>300</TimeoutSeconds>
+        </DataSource>
+      </Discovery>
+
+      <!-- Discover Certificates in Central Certificate Store -->
+      <Discovery ID="CentralCertificateStore.MP.Certificate.Discovery" Enabled="true" Target="CentralCertificateStore.MP.CentralCertificateStore" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="CentralCertificateStore.MP.Certificate" />
+          <DiscoveryRelationship TypeID="CentralCertificateStore.MP.CentralCertificateStoreHostsCertificate" />
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="CentralCertificateStore.MP.CentralCertificateStore.Discovery.DataSource">
+          <IntervalSeconds>3600</IntervalSeconds>
+          <ExcludedIssuers>$Target/Property[Type="CentralCertificateStore.MP.CentralCertificateStore"]/ExcludedIssuers$</ExcludedIssuers>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+
+    <Monitors>
+      <!-- Certificate Expiration Monitor -->
+      <UnitMonitor ID="CentralCertificateStore.MP.Certificate.ExpirationMonitor" Accessibility="Public" Enabled="true" Target="CentralCertificateStore.MP.Certificate" ParentMonitorID="Health!System.Health.AvailabilityState" Remotable="true" Priority="Normal" TypeID="System!System.ExpressionFilter" ConfirmDelivery="false">
+        <Category>AvailabilityHealth</Category>
+        <AlertSettings AlertMessage="CentralCertificateStore.MP.Certificate.ExpirationMonitor.AlertMessage">
+          <AlertOnState>Warning</AlertOnState>
+          <AutoResolve>true</AutoResolve>
+          <AlertPriority>Normal</AlertPriority>
+          <AlertSeverity>Warning</AlertSeverity>
+          <AlertParameters>
+            <AlertParameter1>$Target/Property[Type="CentralCertificateStore.MP.Certificate"]/Subject$</AlertParameter1>
+            <AlertParameter2>$Target/Property[Type="CentralCertificateStore.MP.Certificate"]/NotAfter$</AlertParameter2>
+            <AlertParameter3>$Target/Property[Type="CentralCertificateStore.MP.Certificate"]/Issuer$</AlertParameter3>
+            <AlertParameter4>$Data/Context/Property[@Name='HoursUntilExpiration']$</AlertParameter4>
+          </AlertParameters>
+        </AlertSettings>
+        <OperationalStates>
+          <OperationalState ID="Healthy" MonitorTypeStateID="Success" HealthState="Success" />
+          <OperationalState ID="Warning" MonitorTypeStateID="Failure" HealthState="Warning" />
+        </OperationalStates>
+        <Configuration>
+          <IntervalSeconds>3600</IntervalSeconds>
+          <SyncTime />
+          <Expression>
+            <SimpleExpression>
+              <ValueExpression>
+                <XPathQuery Type="String">Property[@Name='State']</XPathQuery>
+              </ValueExpression>
+              <Operator>Equal</Operator>
+              <ValueExpression>
+                <Value Type="String">Warning</Value>
+              </ValueExpression>
+            </SimpleExpression>
+          </Expression>
+          <SuppressionSettings>
+            <MatchCount>2</MatchCount>
+          </SuppressionSettings>
+          <DataSource ID="DS" TypeID="CentralCertificateStore.MP.Certificate.Expiration.DataSource">
+            <IntervalSeconds>3600</IntervalSeconds>
+            <WarningThresholdHours>24</WarningThresholdHours>
+            <Thumbprint>$Target/Property[Type="CentralCertificateStore.MP.Certificate"]/Thumbprint$</Thumbprint>
+          </DataSource>
+        </Configuration>
+      </UnitMonitor>
+    </Monitors>
+  </Monitoring>
+
+  <Presentation>
+    <StringResources>
+      <StringResource ID="CentralCertificateStore.MP.Certificate.ExpirationMonitor.AlertMessage" />
+    </StringResources>
+  </Presentation>
+
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="true">
+      <DisplayStrings>
+        <!-- Management Pack Display Strings -->
+        <DisplayString ElementID="CentralCertificateStore.MP">
+          <Name>Central Certificate Store Monitoring</Name>
+          <Description>Monitors certificates in the Windows Central Certificate Store for expiration</Description>
+        </DisplayString>
+
+        <!-- Class Display Strings -->
+        <DisplayString ElementID="CentralCertificateStore.MP.CentralCertificateStore">
+          <Name>Central Certificate Store</Name>
+          <Description>Windows Central Certificate Store for IIS</Description>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate">
+          <Name>Certificate</Name>
+          <Description>SSL/TLS Certificate in Central Certificate Store</Description>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="Thumbprint">
+          <Name>Thumbprint</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="Subject">
+          <Name>Subject</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="Issuer">
+          <Name>Issuer</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="NotBefore">
+          <Name>Valid From</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="NotAfter">
+          <Name>Valid Until</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate" SubElementID="FriendlyName">
+          <Name>Friendly Name</Name>
+        </DisplayString>
+
+        <!-- Discovery Display Strings -->
+        <DisplayString ElementID="CentralCertificateStore.MP.CentralCertificateStore.Discovery">
+          <Name>Central Certificate Store Discovery</Name>
+          <Description>Discovers the Central Certificate Store on Windows Servers</Description>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate.Discovery">
+          <Name>Certificate Discovery</Name>
+          <Description>Discovers certificates in the Central Certificate Store</Description>
+        </DisplayString>
+
+        <!-- Monitor Display Strings -->
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate.ExpirationMonitor">
+          <Name>Certificate Expiration Monitor</Name>
+          <Description>Monitors certificate expiration and alerts when expiration is within 24 hours</Description>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate.ExpirationMonitor.AlertMessage">
+          <Name>Certificate Expiring Soon</Name>
+          <Description>Certificate '{0}' will expire on {1}.
+Issuer: {2}
+Hours until expiration: {3}
+
+Please renew this certificate to avoid service disruption.</Description>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate.ExpirationMonitor" SubElementID="Healthy">
+          <Name>Certificate Valid</Name>
+        </DisplayString>
+
+        <DisplayString ElementID="CentralCertificateStore.MP.Certificate.ExpirationMonitor" SubElementID="Warning">
+          <Name>Certificate Expiring Soon</Name>
+        </DisplayString>
+      </DisplayStrings>
+
+      <KnowledgeArticles>
+        <KnowledgeArticle ElementID="CentralCertificateStore.MP" Visible="true">
+          <MamlContent>
+            <section xmlns="http://schemas.microsoft.com/maml/2004/10">
+              <title>Central Certificate Store Monitoring Management Pack</title>
+              <para>This Management Pack monitors SSL/TLS certificates stored in the Windows Central Certificate Store.</para>
+              <para>Features:</para>
+              <list>
+                <listItem>
+                  <para>Automatic discovery of Central Certificate Store and certificates</para>
+                </listItem>
+                <listItem>
+                  <para>Expiration monitoring with 24-hour warning threshold</para>
+                </listItem>
+                <listItem>
+                  <para>Configurable filtering to exclude certificates from specific issuers</para>
+                </listItem>
+              </list>
+            </section>
+          </MamlContent>
+        </KnowledgeArticle>
+
+        <KnowledgeArticle ElementID="CentralCertificateStore.MP.Certificate.ExpirationMonitor" Visible="true">
+          <MamlContent>
+            <section xmlns="http://schemas.microsoft.com/maml/2004/10">
+              <title>Certificate Expiration Monitor</title>
+              <para>This monitor checks certificate expiration times and raises a warning alert when a certificate will expire within 24 hours.</para>
+              <para>Resolution:</para>
+              <list>
+                <listItem>
+                  <para>Renew the certificate before it expires</para>
+                </listItem>
+                <listItem>
+                  <para>Update the certificate in the Central Certificate Store</para>
+                </listItem>
+                <listItem>
+                  <para>Verify that dependent applications can access the new certificate</para>
+                </listItem>
+              </list>
+            </section>
+          </MamlContent>
+        </KnowledgeArticle>
+      </KnowledgeArticles>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>

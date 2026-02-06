@@ -1,45 +1,98 @@
-# Central Certificate Store Monitoring Management Pack for SCOM
+# 🛡️ SCOM Central Certificate Store Monitoring
 
-## Overview
+### A SCOM Management Pack that discovers and monitors SSL/TLS certificates in the Windows Central Certificate Store — with automatic expiration alerts and issuer filtering.
 
-This Management Pack provides comprehensive monitoring of SSL/TLS certificates stored in the Windows Central Certificate Store (CCS) for System Center Operations Manager (SCOM).
+[![GitHub Stars](https://img.shields.io/github/stars/CheswickDEV/SCOM-CCS-Monitoring?color=00d4ff&labelColor=16161f)](https://github.com/CheswickDEV/SCOM-CCS-Monitoring)
+[![Last Commit](https://img.shields.io/github/last-commit/CheswickDEV/SCOM-CCS-Monitoring?color=a855f7&labelColor=16161f)](https://github.com/CheswickDEV/SCOM-CCS-Monitoring/commits/main)
+![Version](https://img.shields.io/badge/version-1.0.0.0-00d4ff?labelColor=16161f)
+![Status](https://img.shields.io/badge/status-Active-00d4ff?labelColor=16161f)
+![License](https://img.shields.io/badge/license-MIT-a855f7?labelColor=16161f)
+![PowerShell](https://img.shields.io/badge/PowerShell-4.0+-a855f7?logo=powershell&logoColor=white&labelColor=16161f)
+![SCOM](https://img.shields.io/badge/SCOM-2012_R2+-a855f7?labelColor=16161f)
 
-## Features
+---
 
-- **Automatic Discovery**: Discovers the Central Certificate Store and all certificates within it
-- **Expiration Monitoring**: Monitors certificate expiration and alerts when certificates are within 24 hours of expiring
-- **Issuer Filtering**: Allows filtering to exclude certificates from specific certificate authorities (issuers)
-- **Detailed Alerting**: Provides comprehensive alert information including subject, expiration date, and issuer details
-- **Configurable Thresholds**: Override warning thresholds and monitoring intervals as needed
+## 💡 What It Does
 
-## Requirements
+Managing SSL/TLS certificates across servers is tedious and forgetting to renew one can cause outages. This Management Pack automates the entire monitoring lifecycle:
+
+1. **Discovers** the Central Certificate Store (CCS) on any Windows Server where it's configured
+2. **Inventories** all PFX certificates within the store
+3. **Monitors** expiration dates and raises alerts when certificates are about to expire
+4. **Filters** out irrelevant certificates (e.g. internal test CAs) via configurable issuer exclusions
+
+No agents to deploy, no scripts to schedule — it runs inside SCOM like any other Management Pack.
+
+---
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Requirements](#-requirements)
+- [Quick Start](#-quick-start)
+- [Configuration](#️-configuration)
+- [Monitoring Details](#-monitoring-details)
+- [Troubleshooting](#-troubleshooting)
+- [Event ID Reference](#-event-id-reference)
+- [Best Practices](#-best-practices)
+- [Security](#-security)
+- [Tech Stack](#️-tech-stack)
+- [Changelog](#-changelog)
+- [License](#-license)
+
+---
+
+## ⚡ Features
+
+- **🔍 Automatic Discovery** — Detects the Central Certificate Store and all certificates within it by reading the IIS CCS registry configuration.
+
+- **⏰ Expiration Monitoring** — Raises a Warning alert when certificates are within 24 hours of expiring (configurable). Automatically resolves when renewed.
+
+- **🏷️ Issuer Filtering** — Exclude certificates from specific CAs (e.g. internal test issuers) to reduce alert noise. Supports partial matching with wildcards.
+
+- **📊 Detailed Alerts** — Each alert includes subject, expiration date/time, issuer information, and hours until expiration.
+
+- **⚙️ Fully Configurable** — Override warning thresholds, discovery intervals, and monitoring intervals via standard SCOM overrides.
+
+---
+
+## 📋 Requirements
 
 - System Center Operations Manager 2012 R2 or later
-- Windows Server 2012 or later with IIS Central Certificate Store configured
-- PowerShell 4.0 or later
-- Appropriate permissions to access the Central Certificate Store path
+- Windows Server 2012+ with IIS Central Certificate Store configured
+- PowerShell 4.0 or later on monitored servers
+- SCOM agent service account with read access to the CCS path
 
-## Installation
+---
 
-1. Import the Management Pack into SCOM:
-   ```powershell
-   Import-SCOMManagementPack -FullName "CentralCertificateStore.MP.xml"
-   ```
+## 🚀 Quick Start
 
-2. Wait for discovery to complete (initial discovery runs every 4 hours for CCS, every hour for certificates)
+### 1. Import the Management Pack
 
-3. Configure issuer filtering if needed (see Configuration section below)
+```powershell
+Import-SCOMManagementPack -FullName "CentralCertificateStore.MP.xml"
+```
 
-## Configuration
+### 2. Wait for Discovery
+
+- CCS discovery runs every **4 hours**
+- Certificate discovery runs every **1 hour**
+- First alerts appear after the initial certificate discovery cycle
+
+### 3. Configure Issuer Filtering (optional)
+
+If you need to exclude internal test CAs, see [Excluding Certificates by Issuer](#excluding-certificates-by-issuer) below.
+
+---
+
+## ⚙️ Configuration
 
 ### Excluding Certificates by Issuer
 
-To exclude certificates from specific issuers (e.g., internal test CAs), you need to override the `ExcludedIssuers` property:
-
-1. In SCOM Console, go to **Authoring** > **Management Pack Objects** > **Object Discoveries**
-2. Find **Certificate Discovery** (CentralCertificateStore.MP.Certificate.Discovery)
-3. Right-click and select **Overrides** > **Override the Discovery** > **For all objects of class: Central Certificate Store**
-4. Set the **ExcludedIssuers** parameter with a semicolon-separated list of issuer names or patterns:
+1. In SCOM Console → **Authoring** → **Management Pack Objects** → **Object Discoveries**
+2. Find **Certificate Discovery** (`CentralCertificateStore.MP.Certificate.Discovery`)
+3. Right-click → **Overrides** → **Override the Discovery** → **For all objects of class: Central Certificate Store**
+4. Set **ExcludedIssuers** with a semicolon-separated list:
    ```
    CN=Internal Test CA;CN=Dev Certificate Authority;O=Test Organization
    ```
@@ -47,262 +100,180 @@ To exclude certificates from specific issuers (e.g., internal test CAs), you nee
 
 ### Adjusting Warning Threshold
 
-The default warning threshold is 24 hours before expiration. To change this:
+The default threshold is **24 hours** before expiration. To change it:
 
-1. Go to **Authoring** > **Management Pack Objects** > **Monitors**
-2. Find **Certificate Expiration Monitor** (CentralCertificateStore.MP.Certificate.ExpirationMonitor)
-3. Right-click and select **Overrides** > **Override the Monitor** > **For all objects of class: Certificate**
-4. Adjust the **WarningThresholdHours** parameter (e.g., set to 48 for 2 days warning)
-5. Save the override to an appropriate Management Pack
+1. **Authoring** → **Monitors** → Find **Certificate Expiration Monitor**
+2. Override **WarningThresholdHours** (e.g. `48` for 2 days, `168` for 1 week)
 
-### Adjusting Discovery and Monitoring Intervals
+### Adjusting Intervals
 
-To change how frequently discoveries and monitoring run:
+| Component | Default | Override Parameter |
+|:----------|:-------:|:-------------------|
+| CCS Discovery | 4 hours | `IntervalSeconds` (e.g. `7200` for 2h) |
+| Certificate Discovery | 1 hour | `IntervalSeconds` |
+| Expiration Monitor | 1 hour | `IntervalSeconds` |
 
-1. **Central Certificate Store Discovery** (default: 4 hours):
-   - Override the **IntervalSeconds** parameter
-   - Example: 7200 for 2 hours
+---
 
-2. **Certificate Discovery** (default: 1 hour):
-   - Override the **IntervalSeconds** parameter in Certificate Discovery
-
-3. **Certificate Expiration Monitor** (default: 1 hour):
-   - Override the **IntervalSeconds** parameter in Certificate Expiration Monitor
-
-## Certificate Store Configuration
-
-The Management Pack reads the Central Certificate Store configuration from the registry:
-
-- **Registry Path**: `HKLM:\SOFTWARE\Microsoft\IIS\CentralCertProvider`
-- **Required Keys**:
-  - `Enabled` (DWORD): Must be set to 1
-  - `CertStoreLocation` (String): Physical path to the certificate store (e.g., `C:\CentralCertStore`)
-  - `PrivateKeyPassword` (String, Optional): Password for PFX files
-
-## Monitoring Details
+## 📊 Monitoring Details
 
 ### Discovery Process
 
-1. **Central Certificate Store Discovery**:
-   - Runs every 4 hours on Windows Server Operating Systems
-   - Checks registry for CCS configuration
-   - Creates a single CCS instance per server if configured
+**Central Certificate Store Discovery** (every 4 hours):
+- Runs on all Windows Server Operating Systems
+- Checks registry path `HKLM:\SOFTWARE\Microsoft\IIS\CentralCertProvider`
+- Requires `Enabled = 1` and a valid `CertStoreLocation` path
+- Creates one CCS instance per server
 
-2. **Certificate Discovery**:
-   - Runs every hour on discovered CCS instances
-   - Reads all PFX files from the configured path
-   - Filters out certificates from excluded issuers
-   - Creates certificate instances with properties:
-     - Thumbprint (unique identifier)
-     - Subject
-     - Issuer
-     - Valid From (NotBefore)
-     - Valid Until (NotAfter)
-     - Friendly Name
-
-### Monitoring Process
-
-**Certificate Expiration Monitor**:
-- Runs every hour for each discovered certificate
-- Calculates time until expiration
-- Raises **Warning** alert when expiration is within threshold (default: 24 hours)
-- Automatically resolves when certificate is renewed or time extends beyond threshold
-- Alert includes:
-  - Certificate subject
-  - Expiration date and time
-  - Issuer information
-  - Hours until expiration
+**Certificate Discovery** (every 1 hour):
+- Reads all PFX files from the configured CCS path
+- Filters out certificates matching excluded issuers
+- Extracts: Thumbprint, Subject, Issuer, Valid From, Valid Until, Friendly Name
 
 ### Health States
 
-- **Healthy**: Certificate is valid and not within warning threshold
-- **Warning**: Certificate will expire within the configured threshold
-- **Critical**: Certificate has already expired (Note: Current version uses Warning for imminent expiration)
+| State | Condition |
+|:------|:----------|
+| 🟢 **Healthy** | Certificate is valid and not within warning threshold |
+| 🟡 **Warning** | Certificate will expire within the configured threshold |
+| 🔴 **Critical** | Certificate has already expired |
 
-## Troubleshooting
+Alerts auto-resolve when the certificate is renewed or the expiration window extends beyond the threshold.
+
+---
+
+## 🔧 Troubleshooting
 
 ### Certificates Not Discovered
 
-1. Verify Central Certificate Store is properly configured:
+1. Verify CCS is configured:
    ```powershell
    Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\IIS\CentralCertProvider"
    ```
-
-2. Check that the certificate store path exists and is accessible
+2. Confirm `Enabled = 1` and `CertStoreLocation` points to an accessible path
 3. Verify PFX files exist in the configured path
-4. Check SCOM event logs for discovery script errors (Event IDs 2000-2006)
+4. Check SCOM event logs for script errors (Event IDs 2000–2006)
 
 ### Certificates Discovered But Not Monitored
 
-1. Check SCOM event logs for monitoring script errors (Event IDs 3000-3006)
+1. Check SCOM event logs for monitoring script errors (Event IDs 3000–3006)
 2. Verify certificate files are not corrupted
-3. Confirm password-protected PFX files have correct password configured in registry
+3. Confirm password-protected PFX files have the correct password in registry
 
-### Filtering Not Working
+### Issuer Filtering Not Working
 
-1. Verify the override is properly saved and applied
-2. Check issuer names match exactly (partial matching with wildcards is supported)
-3. Use semicolon (;) as separator for multiple issuers
-4. Wait for next discovery cycle (1 hour) or manually run discovery
+1. Verify the override is saved and applied
+2. Check that issuer names match exactly (partial matching with wildcards is supported)
+3. Use semicolons (`;`) as separators — not commas
+4. Wait for the next discovery cycle (1 hour) or trigger discovery manually
 
-### View Event Log Messages
+### Viewing Event Logs
 
 ```powershell
-# View discovery events
+# Discovery events
 Get-EventLog -LogName "Operations Manager" -Source "Health Service Script" |
     Where-Object { $_.Message -like "*Discover-Central*" } |
     Select-Object TimeGenerated, EntryType, Message
 
-# View monitoring events
+# Monitoring events
 Get-EventLog -LogName "Operations Manager" -Source "Health Service Script" |
     Where-Object { $_.Message -like "*Monitor-Certificate*" } |
     Select-Object TimeGenerated, EntryType, Message
 ```
 
-## Event IDs
+---
 
-### Discovery Events
+## 📋 Event ID Reference
 
-- **1000**: Central Certificate Store discovered successfully
-- **1001**: Central Certificate Store not enabled
-- **1002**: Central Certificate Store registry key not found
-- **1003**: Error during CCS discovery
-- **2000**: Certificates discovered successfully
-- **2001-2006**: Various certificate discovery errors and warnings
+<details>
+<summary><strong>Discovery Events</strong></summary>
 
-### Monitoring Events
+| Event ID | Meaning |
+|:--------:|:--------|
+| 1000 | Central Certificate Store discovered successfully |
+| 1001 | Central Certificate Store not enabled |
+| 1002 | Registry key not found |
+| 1003 | Error during CCS discovery |
+| 2000 | Certificates discovered successfully |
+| 2001–2006 | Various certificate discovery errors/warnings |
 
-- **3000**: Certificate is healthy
-- **3003**: Certificate has expired (Critical)
-- **3004**: Certificate expiring soon (Warning)
-- **3005**: Certificate not found
-- **3006**: Monitoring error
+</details>
 
-## Best Practices
+<details>
+<summary><strong>Monitoring Events</strong></summary>
 
-1. **Set appropriate thresholds**: Consider certificate renewal processes and timelines
-2. **Configure issuer filtering**: Exclude internal test CAs to reduce noise
-3. **Regular testing**: Periodically test with certificates close to expiration
-4. **Alert routing**: Configure notification subscriptions for certificate alerts
-5. **Documentation**: Maintain documentation of which applications use which certificates
-6. **Automated renewal**: Integrate with certificate renewal processes to auto-resolve alerts
+| Event ID | Meaning |
+|:--------:|:--------|
+| 3000 | Certificate is healthy |
+| 3003 | Certificate has expired (Critical) |
+| 3004 | Certificate expiring soon (Warning) |
+| 3005 | Certificate not found |
+| 3006 | Monitoring error |
 
-## Security Considerations
-
-- The Management Pack reads certificates with read-only access
-- Private key passwords are stored in registry (consider using encrypted storage)
-- SCOM agent service account requires read access to CCS path
-- Consider restricting access to override MPs that contain issuer filters
-
-## Version History
-
-- **1.0.0.0** (2026-01-11): Initial release
-  - Central Certificate Store discovery
-  - Certificate discovery with issuer filtering
-  - Certificate expiration monitoring with 24-hour threshold
-  - Configurable overrides for all key parameters
-
-## Support
-
-For issues, questions, or feature requests, please refer to your organization's SCOM support channels.
+</details>
 
 ---
 
-# Management Pack für die Überwachung des zentralen Zertifikatspeichers für SCOM
+## 🏆 Best Practices
 
-## Übersicht
+1. **Set thresholds that match your renewal process** — if certificate renewal takes a week, set the threshold to at least 168 hours
+2. **Exclude test CAs** — reduce alert noise by filtering out internal and development certificate authorities
+3. **Configure alert routing** — set up SCOM notification subscriptions to email or Teams for certificate alerts
+4. **Test with expiring certs** — periodically verify monitoring works by deploying a certificate that expires within the threshold
+5. **Integrate with renewal automation** — if you use ACME/Let's Encrypt or internal CA automation, alerts should auto-resolve after renewal
 
-Dieses Management Pack bietet eine umfassende Überwachung von SSL/TLS-Zertifikaten, die im zentralen Zertifikatspeicher (Central Certificate Store, CCS) von Windows für System Center Operations Manager (SCOM) gespeichert sind.
+---
 
-## Funktionen
+## 🔒 Security
 
-- **Automatische Erkennung**: Erkennt den zentralen Zertifikatspeicher und alle darin enthaltenen Zertifikate
-- **Ablaufüberwachung**: Überwacht den Ablauf von Zertifikaten und warnt, wenn Zertifikate innerhalb von 24 Stunden ablaufen
-- **Aussteller-Filterung**: Ermöglicht das Filtern, um Zertifikate von bestimmten Zertifizierungsstellen (Ausstellern) auszuschließen
-- **Detaillierte Warnmeldungen**: Bietet umfassende Warninformationen einschließlich Betreff, Ablaufdatum und Ausstellerdetails
-- **Konfigurierbare Schwellenwerte**: Überschreiben Sie Warnschwellenwerte und Überwachungsintervalle nach Bedarf
+- The Management Pack reads certificates with **read-only** access — no private keys are extracted
+- PFX passwords stored in registry should use encrypted storage where possible
+- SCOM agent service account requires read access to the CCS path
+- Consider restricting access to override Management Packs containing issuer filter configurations
 
-## Anforderungen
+---
 
-- System Center Operations Manager 2012 R2 oder höher
-- Windows Server 2012 oder höher mit konfiguriertem IIS Central Certificate Store
-- PowerShell 4.0 oder höher
-- Entsprechende Berechtigungen für den Zugriff auf den Central Certificate Store-Pfad
+## 🛠️ Tech Stack
 
-## Installation
+![PowerShell](https://img.shields.io/badge/PowerShell-16161f?logo=powershell&logoColor=00d4ff)
+![SCOM](https://img.shields.io/badge/SCOM-16161f?logo=windows&logoColor=00d4ff)
 
-1. Importieren Sie das Management Pack in SCOM:
-   ```powershell
-   Import-SCOMManagementPack -FullName "CentralCertificateStore.MP.xml"
-   ```
+```
+SCOM-CCS-Monitoring/
+├── CentralCertificateStore.MP.xml      # The Management Pack
+├── QUICKSTART.md                       # Quick start guide
+├── README.md                           # This file
+└── Scripts/
+    ├── Discover-CentralCertificateStore.ps1
+    ├── Discover-CentralCertificates.ps1
+    └── Monitor-CertificateExpiration.ps1
+```
 
-2. Warten Sie, bis die Erkennung abgeschlossen ist (erste Erkennung läuft alle 4 Stunden für CCS, jede Stunde für Zertifikate)
+---
 
-3. Konfigurieren Sie bei Bedarf die Aussteller-Filterung (siehe Abschnitt Konfiguration unten)
+## 📝 Changelog
 
-## Konfiguration
+### v1.0.0.0 (2026-01-11)
+- 🚀 Initial release
+- ✨ Central Certificate Store discovery
+- ✨ Certificate discovery with issuer filtering
+- ✨ Expiration monitoring with configurable 24-hour threshold
+- ✨ Full override support for all key parameters
 
-### Ausschließen von Zertifikaten nach Aussteller
+---
 
-Um Zertifikate von bestimmten Ausstellern auszuschließen (z.B. interne Test-CAs), müssen Sie die Eigenschaft `ExcludedIssuers` überschreiben:
+## 📄 License
 
-1. Gehen Sie in der SCOM-Konsole zu **Erstellung** > **Management Pack-Objekte** > **Objekterkennungen**
-2. Suchen Sie **Certificate Discovery** (CentralCertificateStore.MP.Certificate.Discovery)
-3. Klicken Sie mit der rechten Maustaste und wählen Sie **Überschreibungen** > **Erkennung überschreiben** > **Für alle Objekte der Klasse: Central Certificate Store**
-4. Setzen Sie den Parameter **ExcludedIssuers** mit einer durch Semikolon getrennten Liste von Ausstellernamen oder -mustern:
-   ```
-   CN=Interne Test CA;CN=Dev Zertifizierungsstelle;O=Test Organisation
-   ```
-5. Speichern Sie die Überschreibung in einem geeigneten Management Pack
+[MIT](LICENSE) — do what you want, just give credit.
 
-### Anpassen des Warnschwellenwerts
+---
 
-Der Standard-Warnschwellenwert liegt 24 Stunden vor Ablauf. Um dies zu ändern:
+<p align="center">
+  <a href="https://cheswick.dev">
+    <img src="https://img.shields.io/badge/CHESWICK.DEV-00d4ff?logo=firefox&logoColor=0a0a0f&labelColor=a855f7" alt="cheswick.dev" />
+  </a>
+</p>
 
-1. Gehen Sie zu **Erstellung** > **Management Pack-Objekte** > **Monitore**
-2. Suchen Sie **Certificate Expiration Monitor** (CentralCertificateStore.MP.Certificate.ExpirationMonitor)
-3. Klicken Sie mit der rechten Maustaste und wählen Sie **Überschreibungen** > **Monitor überschreiben** > **Für alle Objekte der Klasse: Certificate**
-4. Passen Sie den Parameter **WarningThresholdHours** an (z.B. auf 48 für 2 Tage Warnung setzen)
-5. Speichern Sie die Überschreibung in einem geeigneten Management Pack
-
-## Fehlerbehebung
-
-### Zertifikate werden nicht erkannt
-
-1. Überprüfen Sie, ob der zentrale Zertifikatspeicher ordnungsgemäß konfiguriert ist:
-   ```powershell
-   Get-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\IIS\CentralCertProvider"
-   ```
-
-2. Überprüfen Sie, ob der Zertifikatspeicherpfad existiert und zugänglich ist
-3. Überprüfen Sie, ob PFX-Dateien im konfigurierten Pfad vorhanden sind
-4. Überprüfen Sie die SCOM-Ereignisprotokolle auf Erkennungsskriptfehler (Ereignis-IDs 2000-2006)
-
-### Zertifikate erkannt, aber nicht überwacht
-
-1. Überprüfen Sie die SCOM-Ereignisprotokolle auf Überwachungsskriptfehler (Ereignis-IDs 3000-3006)
-2. Überprüfen Sie, ob die Zertifikatsdateien nicht beschädigt sind
-3. Bestätigen Sie, dass passwortgeschützte PFX-Dateien das richtige Passwort in der Registrierung konfiguriert haben
-
-### Filterung funktioniert nicht
-
-1. Überprüfen Sie, ob die Überschreibung ordnungsgemäß gespeichert und angewendet wurde
-2. Überprüfen Sie, ob die Ausstellernamen genau übereinstimmen (teilweise Übereinstimmung mit Wildcards wird unterstützt)
-3. Verwenden Sie Semikolon (;) als Trennzeichen für mehrere Aussteller
-4. Warten Sie auf den nächsten Erkennungszyklus (1 Stunde) oder führen Sie die Erkennung manuell aus
-
-## Best Practices
-
-1. **Setzen Sie geeignete Schwellenwerte**: Berücksichtigen Sie Zertifikatserneuerungsprozesse und Zeitpläne
-2. **Konfigurieren Sie die Aussteller-Filterung**: Schließen Sie interne Test-CAs aus, um Rauschen zu reduzieren
-3. **Regelmäßige Tests**: Testen Sie regelmäßig mit Zertifikaten, die kurz vor dem Ablauf stehen
-4. **Alarm-Routing**: Konfigurieren Sie Benachrichtigungsabonnements für Zertifikatswarnungen
-5. **Automatische Erneuerung**: Integrieren Sie mit Zertifikatserneuerungsprozessen, um Warnungen automatisch aufzulösen
-
-## Versionsverlauf
-
-- **1.0.0.0** (2026-01-11): Erste Version
-  - Erkennung des zentralen Zertifikatspeichers
-  - Zertifikatserkennung mit Aussteller-Filterung
-  - Überwachung des Zertifikatsablaufs mit 24-Stunden-Schwellenwert
-  - Konfigurierbare Überschreibungen für alle wichtigen Parameter
+<p align="center">
+  Made with 🖤 by <a href="https://cheswick.dev">cheswick.dev</a>
+</p>
